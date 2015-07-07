@@ -1,0 +1,64 @@
+#!/usr/bin/expect
+#
+# Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+#
+
+set port [ lindex $argv 0 ]
+set password [ lindex $argv 1 ]
+
+spawn telnet 0 $port
+expect {
+    "Press ~? for control options" {
+        send "\r"
+       }
+    timeout {
+        exit 1
+       }
+}
+
+expect {
+    "console login:" { 
+        send "root\r" 
+       }
+    timeout  {
+        exit 1
+       }
+}
+
+expect {
+    "Password:" {
+        send "$password\r" 
+     }
+    timeout {
+        exit 1
+    }
+}
+
+expect {
+    "#" {
+        send "reboot\r"
+    }
+    timeout {
+        exit 1
+    }
+}
+
+set timeout 600
+
+expect {
+    "console login:" {
+        exit 0
+    }
+    timeout {
+        exit 1
+    }
+}
+
+send "\x1d\r"
+expect {
+        "telnet>" {
+             send "q\r"
+       }
+}
+
+expect eof

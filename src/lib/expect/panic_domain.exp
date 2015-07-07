@@ -1,0 +1,79 @@
+#!/usr/bin/expect
+#
+# Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+#
+
+set port [ lindex $argv 0 ]
+set password [ lindex $argv 1 ]
+set op [ lindex $argv 2 ]
+set ret_val 2
+
+spawn telnet 0 $port
+expect {
+    "Press ~? for control options" {
+        send "\r"
+       }
+    timeout {
+        exit 1
+       }
+}
+
+expect {
+    "console login:" { 
+        send "root\r" 
+       }
+    timeout  {
+        exit 1
+       }
+}
+
+expect {
+    "Password:" {
+        send "${password}\r" 
+     }
+    timeout {
+        exit 1
+    }
+}
+
+expect {
+    "#" {
+        send "echo 'log_init::dis' | mdb -k |grep printf |wc -l\r"
+    }
+    timeout {
+        exit 1
+    }
+}
+
+expect {
+    "2" {
+        send "echo 'rootdir/W 0'|mdb -kw\r"
+    }
+    "3" {
+        send "echo 'rootdir/W 0'|mdb -kw\r"
+        expect {
+            "c)ontinue, s)ync, r)eset?" {
+                send "r\r"
+            }
+        }
+    }
+}
+
+set timeout 600
+expect {
+    "console login:" {
+        exit 0
+    }
+    timeout {
+        exit 1
+    }
+}
+
+send "\x1d\r"
+expect {
+        "telnet>" {
+             send "q\r"
+       }
+}
+
+expect eof

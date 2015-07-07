@@ -1,0 +1,31 @@
+#
+# Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+#
+
+CTIDIR.CONFIG	= /config
+CTIDIR.BIN	= /bin
+CTIDIR.LIB	= /lib
+
+CTIDIRS 	= $(CTIDIR.CONFIG) $(CTIDIR.BIN) $(CTIDIR.LIB)
+
+ROOT.TEST   = /tests \
+		      /tests/functional \
+              /tests/functional/test02
+
+TARGETDIRS	= $(CTIDIRS) $(ROOT.TEST)
+
+TETFILES	= tet_scen \
+		      README \
+		      STC.INFO
+
+#
+# Set this to TRUE if the tet thread libraries
+# are required.
+#
+TET_THREADS	=
+
+# prepend the ROOT prefix
+
+ROOTDIRS	= $(TARGETDIRS:%=$(ROOT)%)
+
+include	$(CTI_ROOT)/Makefiles/Makefile.defs

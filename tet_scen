@@ -1,0 +1,13 @@
+#
+# Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+#
+
+all
+	^functional
+
+functional
+	^func_02
+  
+func_02
+    /test/functional/test02/tc_test02{}
+

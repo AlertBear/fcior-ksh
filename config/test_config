@@ -1,0 +1,152 @@
+#
+# Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+#
+
+#
+# This file defines test suite configuration variables.It contains
+# three sections:
+#       1) Common variables
+#       2) Configuration variables used in test cases with only one root domain, such as
+#          functional_test01, functional_test02, functional_test04, stress_test01
+#       3) Configuration variables used in test cases with multiple root domains, such as
+#          functional_test03, functional_test05, functional_test06, stress_test02
+#
+# Test user need to modify section #2 when test functional_test01, functional_test02,
+# functional_test04 and stress_test01
+#
+# Except the #2 variables may used in functional_test03,functional_test05, functional_test06
+# and stress_test02, Test user also need to modify section #3
+#
+
+#
+#--------------------------------------------------------------------------
+# SECTION 1: 
+#--------------------------------------------------------------------------
+#
+
+#
+# Temporary logfile path used in the test case, 
+# test user should not modify.
+#
+LOGFILE_PATH=/var/tmp/fcior
+
+# 
+# Vdbench PATH, has default value, could custom by test user.
+# It should be identical with the vdbench files test user decompressd.
+#
+VDBENCH_PATH=/export/home/vdbench
+
+# 
+# The test root domains and io domain will be cloned by a source domain.
+#
+# If test user has finished creating the root domains and io domain, this config 
+# var should be ignored.
+#
+# If test user execute "run_test --configure" to create root domains and io domains.
+# All test domains will be cloned from this source domain.
+#
+SOURCE_DOMAIN=fc
+SOURCE_DOMAIN_PASSWORD=nqa123
+
+#
+#--------------------------------------------------------------------------
+# SECTION 2: 
+#--------------------------------------------------------------------------
+#
+
+#
+# Use in all the test cases.
+# The root domain including name and password to be used. There are two usages.
+# If the case has only one root domain to use, use this domain as the root domain.
+# If the case has two root domain to use, use this domain as the first root domain.
+# Test user should know the password is the same as source domain's if cloned from 
+# the source domain, else, modify the password as your own.
+#
+NPRD_A=fc-nprd1
+NPRD_A_PASSWORD=nqa123
+
+#
+# Use in all the test cases.
+# PF from the root domain NPRD_A defined above
+#
+PF_A=/SYS/MB/PCIE7/IOVFC.PF1
+
+#
+# Only use in functional_test02.
+# This is another port of the FC device where PF_A affiliated
+#
+PF_A1=/SYS/MB/PCIE7/IOVFC.PF0
+
+#
+# Use in all the test cases.
+# The IO domain including name and password to be used in the functional tests and the stress test01.
+#
+IOD=fc-iod0
+IOD_PASSWORD=nqa123
+
+#
+#--------------------------------------------------------------------------
+# SECTION 3: 
+#--------------------------------------------------------------------------
+#
+
+#
+# Use in functional_test04, functional_test05, functional_test06, stress_02
+# The second root domain including name and password to be used in the case.
+# Test user should know the password is the same as source domain's if cloned 
+# from the source domain, else, modify the password as you own.
+# Only when the case needs two root domains should this domain be used as the second root domain.
+# 
+NPRD_B=fc-nprd2
+NPRD_B_PASSWORD=nqa123
+
+#
+# Use in functional_test04, functional_test05, functional_test06, stress_01
+# PF from the root domain NPRD_B defined above
+#
+PF_B=/SYS/MB/PCIE2/IOVFC.PF1
+
+#
+# Used in the test cases which will run IO workload.
+# Mainly used in functional_test05, functional_test06, stress_test01 and stress_test02
+# port-wwn and node-wwn of the VF created from the PF_A
+#
+PORT_WWN_PF_A_VF0=10:00:00:14:4f:fc:34:00
+NODE_WWN_PF_A_VF0=20:00:00:14:4f:fc:34:00
+PORT_WWN_PF_A_VF1=10:00:00:14:4f:fc:34:01
+NODE_WWN_PF_A_VF1=20:00:00:14:4f:fc:34:01
+PORT_WWN_PF_A_VF2=10:00:00:14:4f:fc:34:02
+NODE_WWN_PF_A_VF2=20:00:00:14:4f:fc:34:02
+
+#
+# Used in the test cases which will run IO workload.
+# Mainly used in functional_test05, functional_test06 and stress_test01
+# port-wwn and node-wwn of the VF created from the PF_B
+#
+PORT_WWN_PF_B_VF0=10:00:00:14:4f:fc:38:00
+NODE_WWN_PF_B_VF0=20:00:00:14:4f:fc:38:00
+PORT_WWN_PF_B_VF1=10:00:00:14:4f:fc:38:01
+NODE_WWN_PF_B_VF1=20:00:00:14:4f:fc:38:01
+PORT_WWN_PF_B_VF2=10:00:00:14:4f:fc:38:02
+NODE_WWN_PF_B_VF2=20:00:00:14:4f:fc:38:02
+
+#
+# Use in stress_test02.
+# Except the above IO domain defined in section #2, user need to define the remaining IO domains
+# Default io domains name were defined below, user can change them.
+# No need to define {IOD_8...IOD_14} while testing Emulex FC card, since maxvfs value is 8 in Emulex PF.
+#
+IOD_1=fc-iod1
+IOD_2=fc-iod2
+IOD_3=fc-iod3
+IOD_4=fc-iod4
+IOD_5=fc-iod5
+IOD_6=fc-iod6
+IOD_7=fc-iod7
+IOD_8=fc-iod8
+IOD_9=fc-iod9
+IOD_10=fc-iod10
+IOD_11=fc-iod11
+IOD_12=fc-iod12
+IOD_13=fc-iod13
+IOD_14=fc-iod14
