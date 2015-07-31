@@ -82,6 +82,7 @@ PF_A1=/SYS/MB/PCIE7/IOVFC.PF0
 # The IO domain including name and password to be used in the functional tests and the stress test01.
 #
 IOD=fc-iod0
+IOD_IP=10.113.194.89
 IOD_PASSWORD=nqa123
 
 #

@@ -14,10 +14,12 @@ test_list="
 startup()
 {
 	cti_report "FC-IOR functional test02: In startup"
+	print "FC-IOR functional test02: In startup"
 
     # Get the vars 
     nprd1=$NPRD_A
-    iod=$iod
+    iod=$IOD
+    iod_ip=$IOD_IP
     pf=$PF_A
 	password=$PASSWORD
 
@@ -34,7 +36,7 @@ startup()
 
 	# Check io domain whether supports ior test
 	info_print_report "Checking $iod whether support ior test"
-	check_iod_runmode $iod
+	check_iod_runmode $iod_ip
 	if [ $? -ne 0 ];then
 		error_print_report "$iod not support ior test"
 		cti_deleteall "$iod not support ior test"
@@ -54,7 +56,7 @@ startup()
 		info_print_report "$pf support ior test"
 	fi		
 
-	# Check PF whether create vf
+	# Check PF whether created vf
 	info_print_report "Checking $pf whether has created vf"
 	check_pf_whether_create_vf $pf
 	if [ $? -ne 0 ];then
@@ -81,8 +83,12 @@ startup()
 			return 1
 		else
 			info_print_report "Created $vf"
+            vf_array[$i]=$vf
 		fi
-
+    done
+    
+    # Allocate vfs 
+	for vf in ${vf_array[*]};do
 		info_print_report "Allocting $vf to $pf"
 		allocate_vf_to_domain $vf $iod
 		if [ $? -ne 0 ];then
@@ -110,6 +116,7 @@ startup()
 cleanup()
 {
 	cti_report "FC-IOR functional test02: In cleanup"
+	print "FC-IOR functional test02: In cleanup"
 
     # Get the vars 
     nprd1=$NPRD_A

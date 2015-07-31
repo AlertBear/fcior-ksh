@@ -104,9 +104,9 @@ function get_domain_port
 volume_array=($(get_volume_of_domain ${source_name}))
 
 if (( ${#volume_array[@]} > 1 ));then
-    typeset i=0
     while true
     do
+        i=0
 		print "-------------------------------------"
         for volume in ${volume_array[@]};do
            print "[$i]${volume}"
@@ -116,7 +116,7 @@ if (( ${#volume_array[@]} > 1 ));then
         print "Which volume do you want to snapshot?"
         read num
         max_num=$(( ${#volume_array[@]} - 1 ))
-        if [ ${num} -gt ${max_num} ] || [ ${num} -gt 0 ];then
+        if [ ${num} -gt ${max_num} ] || [ ${num} -lt 0 ];then
             print "Please input the number above"            
         else
             source_volume=${volume_array[$num]}
@@ -244,8 +244,8 @@ cat > ${tempfile1} << "EOF"
     
 set port [ lindex $argv 0 ]
 set password [ lindex $argv 1 ]
-set ip [ lindex $argvgv 2 ]
-set subnet [ lindex $argvgv 3 ]
+set ip [ lindex $argv 2 ]
+set subnet [ lindex $argv 3 ]
 
 set timeout 30
 spawn telnet 0 $port

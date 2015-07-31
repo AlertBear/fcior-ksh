@@ -91,7 +91,7 @@ function exec_rshcmd_output
     typeset rshcmd=$2
     typeset templog=$(mktemp)
     ping ${rmt_host} > /dev/null 2>&1
-    if [[ $? != 0]];then
+    if [[ $? != 0 ]];then
         print "Remote host ${rmt_host} is not pingable"
         return 2
     fi
@@ -161,23 +161,24 @@ function check_iod_runmode
         return 1
     fi
     # check domain if MPxIO enabled
-    sysv=$(exec_rshcmd_output $iod "uname -r")
+    sysv=$(exec_rshcmd_output $iod_ip "uname -r")
     if [[ "$sysv" == "5.12" ]];then
         exec_rshcmd $iod "test -f /etc/driver/drv/fp.conf"           
         [ $? -ne 0 ] && return 0
     fi
-    is_mpxio=$(exec_rshcmd_output $iod "sed -n '/^mpxio-disable=.*;$/p' /etc/driver/drv/fp.conf")
-    echo $is_mpxio|grep no
+    is_mpxio=$(exec_rshcmd_output $iod_ip "sed -n '/^mpxio-disable=.*;$/p' /etc/driver/drv/fp.conf")
+    echo $is_mpxio|grep no > /dev/null 2>&1
     if [ $? -ne 0 ];then
-        exec_rshcmd $iod "sed '/^mpxio-disable=.*;$/s/yes/no/' /etc/driver/drv/fp.conf > /etc/driver/drv/fp.conf.new" 
-        exec_rshcmd $iod "rm /etc/driver/drv/fp.conf"
-        exec_rshcmd $iod "mv /etc/driver/drv/fp.conf.new /etc/driver/drv/fp.conf"
+        exec_rshcmd $iod_ip "sed '/^mpxio-disable=.*;$/s/yes/no/' /etc/driver/drv/fp.conf > /etc/driver/drv/fp.conf.new" 
+        exec_rshcmd $iod_ip "rm /etc/driver/drv/fp.conf"
+        exec_rshcmd $iod_ip "mv /etc/driver/drv/fp.conf.new /etc/driver/drv/fp.conf"
+        sleep 3
+        ldm stop -r $iod > /dev/null
+        sleep 120
+        is_domain_alive $iod_ip 600
+        [ $? -ne 0 ] && {error_print_report "Failed to enable MPxIO in $iod"; return 1}
     fi
-    sleep 3
-    exec_rshcmd $iod "reboot"
-    sleep 120
-    is_domain_alive $iod 600
-    [ $? -ne 0 ] && {error_print_report "Failed to enable MPxIO in $iod"; return 1}
+    return 0
 }
 
 function check_root_domain_runmode
@@ -207,7 +208,7 @@ function check_root_domain_runmode
 function check_pf_support_ior
 {
     pf=$1
-    class=$(ldm list-io -l -p $pf|cut -d'|' -f7|cut -d'=' -f2)
+    class=$(ldm list-io -l -p $pf|grep "type=PF"|cut -d'|' -f7|cut -d'=' -f2)
     if [[ $class != 'FIBRECHANNEL' ]];then
         error_print_report "$pf is not a FC port"        
         return 1
@@ -219,15 +220,15 @@ function list_all_vfs_on_pf
     pf=$1
     tmpfile=$(mktemp)
     i=0
-    ldm list-io -p $pf|grep type=VF > $tmpfile
+    ldm list-io -p $pf|grep type=VF|cut -d'|' -f3 > $tmpfile
     if [ $? -eq 0 ];then
-        while read ndev ualias nstatus ndomain ntype nbus;do
+        while read ualias;do
            alias=''  
            eval $ualias
            vf_array[$i]=$alias
            (( i++ ))
         done < $tmpfile
-        echo $vf_array
+        echo ${vf_array[*]}
     else
         return 0
     fi
@@ -287,8 +288,10 @@ function destroy_all_vfs_on_pf
         domain=''
         domain_equation=$(ldm list-io -p|grep $vf|cut -d'|' -f5)
         eval $domain_equation
-        remove_vf_from_domain $vf $domain
-        [ $? -ne 0 ] && return 1
+        if [[ $domain != '' ]];then
+            remove_vf_from_domain $vf $domain
+            [ $? -ne 0 ] && return 1
+        fi
     done
     ldm destroy-vf -n max $pf
     return $? 

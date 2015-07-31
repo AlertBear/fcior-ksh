@@ -68,8 +68,8 @@ function destroy_domain
 function get_volume_of_domain
 {
     i=0
-    vdisk_num=$(ldm list-bindings $1|grep VDISK|wc -l)    
-    vdsdev_array=$(ldm list-bindings -p fc | \
+    vdisk_num=$(ldm list-bindings -p $1|grep VDISK|wc -l)    
+    vdsdev_array=$(ldm list-bindings -p $1 | \
         grep VDISK|gawk -F'[|=@]' '{print $5}')
     for vdsdev in ${vdsdev_array};do
         volume=$(ldm list-services -p|grep ${vdsdev}|awk -F'|' '{print $4}' | \
@@ -77,7 +77,7 @@ function get_volume_of_domain
         volume_array[$i]=${volume#'/dev/zvol/dsk/'}
         (( i++ ))
     done
-    echo ${volume_array}
+    echo ${volume_array[*]}
 }
 
 print "-----------------------------------------"

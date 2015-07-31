@@ -9,5 +9,5 @@ functional
 	^func_02
   
 func_02
-    /test/functional/test02/tc_test02{}
+    /tests/functional/test02/tc_test02{}
 
