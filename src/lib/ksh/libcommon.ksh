@@ -64,7 +64,7 @@ function exec_rshcmd
         typeset exec_rshcmd_ret=`cat ${templog}|tail -1`
         if [[ $exec_rshcmd_ret != 0 ]];then
             typeset error_reason=`cat ${templog}|sed '$d'`
-            print "Remote execute ${rmt_cmd} failed:\n${error_reason}" 
+            print "Remote execute \"${rmt_cmd}\" failed:\n${error_reason}" 
             return 1
         fi
     fi
@@ -103,7 +103,7 @@ function exec_rshcmd_output
         typeset exec_rshcmd_ret=`cat ${templog}|tail -1`
         if [[ ${exec_rshcmd_ret} != 0 ]];then
             typeset error_reason=`cat ${templog} | sed '$d'` 
-            print "Remote execute failed in ${rmt_host}:\n${error_reason}"
+            print "Remote execute \"$rshcmd\" failed in ${rmt_host}:\n${error_reason}"
             return 1 
         fi
         cat ${templog}|sed '$d'
@@ -162,8 +162,9 @@ function check_iod_runmode
     fi
     # check domain if MPxIO enabled
     sysv=$(exec_rshcmd_output $iod_ip "uname -r")
+    [ $? -ne 0 ] && return 1
     if [[ "$sysv" == "5.12" ]];then
-        exec_rshcmd $iod "test -f /etc/driver/drv/fp.conf"           
+        exec_rshcmd $iod_ip "test -f /etc/driver/drv/fp.conf"           
         [ $? -ne 0 ] && return 0
     fi
     is_mpxio=$(exec_rshcmd_output $iod_ip "sed -n '/^mpxio-disable=.*;$/p' /etc/driver/drv/fp.conf")
@@ -229,15 +230,39 @@ function list_all_vfs_on_pf
            (( i++ ))
         done < $tmpfile
         echo ${vf_array[*]}
+        ret=1
     else
-        return 0
+        ret=0
     fi
+    return $ret
+}
+
+function check_iod_bound_vf
+{
+    iod=$1
+    tmpfile=$(mktemp)
+    i=0
+    ldm list-io -p|grep $iod > /dev/null 2>&1
+    if [ $? -eq 0 ];then
+        ldm list-io -p|grep $iod|cut -d'|' -f3 > $tmpfile
+        while read ualias;do
+            alias=''
+            eval $ualias
+            vf_array[$i]=$alias
+            (( i++ ))
+        done < $tmpfile
+        echo ${vf_array[*]}
+        ret=1
+    else
+        ret=0
+    fi
+    return $ret
 }
 
 function check_pf_whether_created_vf
 {
     pf=$1
-    ldm list-io -p $pf|grep type=VF
+    ldm list-io -p $pf|grep type=VF > /dev/null
     return $?
 }
 
@@ -300,10 +325,18 @@ function destroy_all_vfs_on_pf
 function create_vf_in_dynamic_mode
 {
     pf=$1
-
-    created_vf_str=$(ldm create-vf $pf)
-    new_vf=$(echo $created_vf_str | cut -d':' -f2)
-    echo $new_vf
+    ret=0
+    ldm create-vf $pf > /dev/null
+    if [ $? -ne 0 ];then
+        ret=1       
+    else 
+        alias=''
+        ualias=$(ldm list-io -p $pf|tail -1|cut -d'|' -f3)
+        eval $ualias
+        new_vf=$(alias)
+        echo $new_vf
+    fi
+    return $ret
 }
 
 function create_vf_in_manual_mode
@@ -311,10 +344,34 @@ function create_vf_in_manual_mode
     pf=$1
     port_wwn=$2
     node_wwn=$3
+    ret=0
+    ldm create-vf port-wwn=$port_wwn node-wwn=$node_wwn $pf > /dev/null
+    if [ $? -ne 0 ];then
+        ret=1       
+    else 
+        alias=''
+        ualias=$(ldm list-io -p $pf|tail -1|cut -d'|' -f3)
+        eval $ualias
+        new_vf=$(alias)
+        echo $new_vf
+    fi
+    return $ret
+}
 
-    create_vf_str=$(ldm create-vf port-wwn=$port_wwn node-wwn=$node_wwn $pf)
-    new_vf=$(echo $created_vf_str | cut -d':' -f2)
-    echo $new_vf
+function check_vf_exists_bound
+{
+    vf=$1
+
+    ldm list-io -p|grep $vf > /dev/null
+    [ $? -ne 0 ] && return 1
+    domain=''
+    domain_equation=$(ldm list-io -p|grep $vf|cut -d'|' -f5)
+    eval $domain_equation
+    if [[ $domain != '' ]];then
+        remove_vf_from_domain $vf $domain
+        [ $? -ne 0 ] && return 1
+    fi
+    return 0
 }
 
 function allocate_vf_to_domain
@@ -405,8 +462,10 @@ function get_vf_hotplug_dev
     vf=$1
 
     vf_info=$(ldm list-io -p|grep $vf)
-    hotplug_dev=$(echo $vf_info|gawk -F'[|=]' '{print $2}')
+    [ $? -ne 0 ] && return 1
+    hotplug_dev=$(echo $vf_info|gawk -F'[|=]' '{print $3}')
     echo /$hotplug_dev
+    return 0
 }
 
 function get_vf_logical_path
@@ -416,11 +475,15 @@ function get_vf_logical_path
 
     logical_path=""
     vf_hotplug_dev=$(get_vf_hotplug_dev $vf)
-    logical_paths=$(exec_rshcmd_output $domain "luxadm probe|grep Path|awk -F: '{print $2}'")
-    for logical_path_item in $logical_paths
-    do
-        exec_rshcmd $domain "prtconf -v $logical_path_item|grep pci|grep $vf_hotplug_dev"
-        [ $? -eq 0 ] && {logical_path=$logical_path_item; break}    
+    logical_paths=$(exec_rshcmd_output $domain "luxadm probe|grep Path|awk -F: '{print \$2}'")
+    [ $? -ne 0 ] && return 1
+    for logical_path_item in ${logical_paths[*]};do
+        ret=$(rsh -n $domain "prtconf -v $logical_path_item|grep pci|"\
+            "grep $vf_hotplug_dev > /dev/null 2>&1 ; echo \$?")
+        if [ $ret -eq 0 ];then
+            logical_path=$logical_path_item
+            break
+        fi
     done
     echo $logical_path
 }
@@ -431,18 +494,37 @@ function check_vf_io_workload_on
     domain=$2
 
     logical_path=$(get_vf_logical_path $vf $domain)
-    disk=${logical_path##\/}
+
+    disk=${logical_path##*\/}
     disk=${disk%s2}
 
     iodata=$(exec_rshcmd_output $domain \
-        "iostat -xn $disk 5 2|grep $disk|awk 'NR==2{print $3,$4}")
-    kr=$(echo $iodata|cut -f1)
-    kw=$(echo $iodata|cut -f2)
+        "iostat -xn $disk 5 2|grep $disk|awk 'NR==2{print \$3,\$4}'")
+    kr=$(echo $iodata|awk '{print $1}')
+    kw=$(echo $iodata|awk '{print $2}')
     if (( $kr + $kw > 0 ));then
-        return 0
+        echo true
     else
-        return 1
+        echo false
     fi
+}
+
+function check_vf_mpxio
+{
+    vf=$1    
+    domain=$2
+
+    logical_path=$(get_vf_logical_path $vf $domain)
+    op_path_count=$(rsh -n $domain "mpathadm list lu $logical_path | " \
+        "grep Operational | awk -F':' '{print \$2}'")
+    [[ $? != 0 ]] && return 1        
+    if [[ $op_path_count > 1 ]];then
+        result=true
+    else
+        result=false
+    fi
+    echo $result
+    return 0
 }
 
 function run_io_workload_on_vf
@@ -502,11 +584,14 @@ function get_vf_hotplug_path_port_status
 	domain=$2
 
 	hotplug_dev=$(get_vf_hotplug_dev $vf)
-	hotplug_dev_format=${hotplug_dev//\//\\\/}
+    hotplug_dev_format=$(echo $hotplug_dev|sed 's/\//\\\//g')
 	hotplug_dev_num=$(exec_rshcmd_output $domain "hotplug list -lv|sed -n '/^$hotplug_dev_format$/='")
+    [ $? -ne 0 ] && return 1
 	hotplug_path_port_status_num=$((hotplug_dev_num - 1))
 	hotplug_path_port_status=$(exec_rshcmd_output $domain "hotplug list -lv|sed -n '${hotplug_path_port_status_num}p'")
+    [ $? -ne 0 ] && return 1
 	echo $hotplug_path_port_status
+    return 0
 }
 
 function get_vf_hotplug_path_port
@@ -515,8 +600,10 @@ function get_vf_hotplug_path_port
 	domain=$2
 
 	hotplug_path_port_status=$(get_vf_hotplug_path_port_status $vf $domain)
+    [ $? -ne 0 ] && return 1
 	hotplug_path_port=$(echo $hotplug_path_port_status|awk '{print $1 " " substr($2,2,length($2)-2)}')
 	echo $hotplug_path_port
+    return 0
 }
 
 function get_vf_hotplug_path
@@ -525,8 +612,10 @@ function get_vf_hotplug_path
 	domain=$2
 
 	hotplug_path_port_status=$(get_vf_hotplug_path_port_status $vf $domain)
+    [ $? -ne 0 ] && return 1
 	hotplug_path=$(echo $hotplug_path_port_status|awk '{print $1}')
 	echo $hotplug_path
+    return 0
 }
 
 function get_vf_hotplug_port
@@ -535,9 +624,10 @@ function get_vf_hotplug_port
 	domain=$2
 
 	hotplug_path_port_status=$(get_vf_hotplug_path_port_status $vf $domain)
+    [ $? -ne 0 ] && return 1
 	hotplug_port_str=$(echo $hotplug_path_port_status|awk '{print $2}')
-	hotplug_port=${hotplug_port:2:7}
-	echo $hotplug_port
+	echo ${hotplug_port_str:1:7}
+    return 0
 }
 
 
@@ -547,39 +637,280 @@ function get_vf_hotplug_status
 	domain=$2
 
 	hotplug_path_port_status=$(get_vf_hotplug_path_port_status $vf $domain)
+    [ $? -ne 0 ] && return 1
 	hotplug_status=$(echo $hotplug_path_port_status|awk '{print $3}')
 	echo $hotplug_status
+    return 0
 }
 
-function save_domain_hotplug_list
+function get_vfs_info
+{
+    vfs=$1
+    domain=$2
+    tempfile=$3
+    for vf in ${vfs[*]};do
+        hotplug_dev=$(get_vf_hotplug_dev $vf)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get hotplug_dev of $vf"
+            return 1
+        fi
+
+        hotplug_path=$(get_vf_hotplug_path $vf $domain)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get hotplug_path of $vf"
+            return 1
+        fi
+        hotplug_port=$(get_vf_hotplug_port $vf $domain)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get hotplug_port of $vf"
+            return 1
+        fi
+        hotplug_status=$(get_vf_hotplug_status $vf $domain)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get hotplug_status of $vf"
+            return 1
+        fi
+        logical_path=$(get_vf_logical_path $vf $domain)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get logical_path of $vf"
+            return 1
+        fi
+        io_state=$(check_vf_io_workload_on $vf $domain)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get io_state of $vf"
+            return 1
+        fi
+        mpxio_flag=$(check_vf_mpxio $vf $domain)
+        if [ $? -ne 0 ];then
+            error_print_report "Failed to get mpxio_flag of $vf"
+            return 1
+        fi
+
+        echo "$vf:$hotplug_dev:$hotplug_path:$hotplug_port:$hotplug_status:"\
+            "$logical_path:$io_state:$mpxio_flag" >> $tempfile
+    done
+}
+
+function get_domain_hotplug_list
 {
 	domain=$1
-	file=$2
+	tmpfile=$(mktemp)
 
 	touch $file 
 	if [ $? -ne 0 ];then
 		return 1
 	fi
-	hotplug_list_info=$(exec_rshcmd_output $domain "hotplug list -lv > $file")
+	exec_rshcmd_output $domain "hotplug list -lv" > $tmpfile
 	return $?
 }
 
 function get_vf_hotplug_status_from_file
 {
-	hotplug_dev=$1
-	file=$2
+	vf=($1)
+    vfs_info=$2
+	tmpfile=$3
 	
+    hotplug_dev=$(cat $vfs_info|grep $vf|awk -F':' '{print $2}')
 	hotplug_dev_format=${hotplug_dev//\//\\\/}
-	hotplug_dev_num=$(sed -n '/^$hotplug_dev_format$/=' $file)
+	hotplug_dev_num=$(sed -n "/^$hotplug_dev_format$/=" $tmpfile)
 	hotplug_status_num=$((hotplug_dev_num - 1))
-	hotplug_status=$(sed -n '${hotplug_status_num}p' $file|awk '{print $3}')
+	hotplug_status=$(sed -n "${hotplug_status_num}p" $tmpfile|awk '{print $3}')
 	echo $hotplug_status
 }
 
 function get_hotplug_status_from_file
 {
-	dev_list=$1
-	domain=$2
+	vfs_array=$1
+    vfs_info=$2
+	domain=$3
 
+    tmpfile=$(mktemp)
+    rsh -n $domain "hotplug list -lv" > $tmpfile
+    [[ $? != 0 ]] && return 1
 
+    online_num=0
+    offline_num=0
+    maintenance_num=0
+    for vf in ${vfs_array[*]};do
+        hotplug_status=$(get_vf_hotplug_status_from_file $vf $vfs_info $tmpfile)
+        [[ $? != 0 ]] && return 1
+        if [[ $hotplug_status == "ONLINE" ]];then
+            (( online_num++ ))
+        elif [[ $hotplug_status == "OFFLINE" ]];then
+            (( offline_num++ ))
+        elif [[ $hotplug_status == "MAINTENANCE-SUSPENDED" ]];then
+            (( maintenance_num++ ))
+        fi     
+    done
+    if (( online_num == ${#vfs_array[*]} ));then
+        status="ONLINE"
+    else
+        status="OTHER"
+    fi
+    if (( offline_num == ${#vfs_array[*]} ));then
+        status="OFFLINE"
+    else
+        status="OTHER"
+    fi
+    if (( maintenance_num == ${#vfs_array[*]} ));then
+        status="MAINTENANCE-SUSPENDED"
+    else
+        status="OTHER"
+    fi
+    echo $status
+    return 0
+}
+
+function check_logical_path
+{
+    vfs_array=$1
+    vfs_info=$2
+    domain=$3
+
+    tmpfile=$(mktemp)
+    rsh -n $domain "luxadm probe|grep Path" > $tmpfile
+    [[ $? != 0 ]] && return 2
+    for vf in ${vfs_array[*]};do
+        vf_logical_path=$(cat $vfs_info|grep $vf|awk -F':' '{print \$6}')
+        vf_mpxio=$(cat $vfs_info|grep $vf|awk -F':' '{print \$7}')
+        if $vf_mpxio;then
+            grep $vf_logical_path $tmpfile > /dev/null 2>&1
+            if [[ $? != 0 ]];then   
+                error_print_report "$vf logical_path check fail"
+                return 1
+            fi
+        else
+            grep $vf_logical_path $tmpfile > /dev/null 2>&1
+            if [[ $? != 0 ]];then   
+                error_print_report "$vf logical_path check fail"
+                return 1
+            fi
+        fi        
+    done
+    return 0
+}
+
+function check_io_state
+{
+    vfs_array=$1
+    vfs_info=$2
+    domain=$3
+
+    tmpfile=$(mktemp)
+    rsh -n $domain "iostat -xn 5 2" > $tmpfile
+    [[ $? != 0 ]] && return 2
+    for vf in ${vfs_array[*]};do
+        vf_logical_path=$(cat $vfs_info|grep $vf|awk -F':' '{print \$6}')
+        vf_mpxio=$(cat $vfs_info|grep $vf|awk -F':' '{print \$7}')
+        vf_io_state=$(cat $vfs_info|grep $vf|awk -F':' '{print \$8}')
+
+        iodata=$(cat $tmpfile|grep $disk|awk 'NR==2{print \$3,\$4}')
+        kr=$(echo $iodata|awk '{print \$1}')
+        kw=$(echo $iodata|awk '{print \$2}')
+
+        if $vf_mpxio;then
+            if $vf_io_state;then
+                if (( $kr + $kw == 0 ));then
+                    error_print_report "$vf io state check fail"
+                    return 1 
+                fi
+            fi     
+        else
+            if $vf_io_state;then
+                if (( $kr + $kw > 0 ));then
+                    error_print_report "$vf io state check fail"
+                    return 1 
+                fi
+            fi     
+        fi        
+    done
+    return 0
+}
+
+function check_ior
+{
+    iod=$1
+    vfs=$2
+    vfs_info=$3
+    op=$4
+    timeout=$5
+
+    result=0
+    state_changed=0
+    logical_path_check_fail=0
+    io_state_check_fail=0
+
+    SECONDS=0
+    while (( SECONDS < $timeout ));do
+        if [[ $state_changed != 2 ]];then
+            status=$(get_hotplug_status_from_file $vfs $vfs_info $iod)
+            if [[ $? != 0 ]];then
+                result=2
+            fi    
+            info_print_report "VFs status are: $status"
+            if [[ $state_changed == 0 ]];then
+                if [[ $status == "OFFLINE" ]];then
+                    info_print_report "VFs are changed to OFFLINE"
+                    state_changed=1
+                    check_logical_path $vfs $vfs_info $iod
+                    if [[ $? == 1 ]];then
+                        logical_path_check_fail=1 
+                    elif [[ $? == 2 ]];then
+                        result=2
+                    fi
+                    check_io_state $vfs $vfs_info $iod
+                    if [[ $? == 1 ]];then
+                        io_state_check_fail=1 
+                    elif [[ $? == 2 ]];then
+                        result=2
+                    fi
+                fi        
+            elif [[ $state_changed == 1 ]];then
+                if [[ $status == "ONLINE" ]];then
+                    info_print_report "VFs are changed back ONLINE"
+                    state_changed=2
+                    check_logical_path $vfs $iod
+                    if [[ $? == 1 ]];then
+                        logical_path_check_fail=1 
+                    elif [[ $? == 2 ]];then
+                        result=2
+                    fi
+                    check_io_state $vfs $iod
+                    if [[ $? == 1 ]];then
+                        io_state_check_fail=1 
+                    elif [[ $? == 2 ]];then
+                        result=2
+                    fi
+                fi        
+            fi
+        fi
+        sleep 10
+    done
+
+    sleep 30
+    ping $iod > /dev/null 2>&1
+    if [[ $? != 0 ]];then
+        error_print_report "Failed to boot up root domain in $timeout seconds"
+        return 2
+    fi
+
+    if [[ $state_changed == 0 ]];then
+        error_print_report "The VFs are not changed during $op root domain"
+        result=1
+    elif [[ $state_changed == 1 ]];then
+        error_print_report "The VFs are not changed back during $op root domain"
+        rsh -n $iod "hotplug list -lv"
+        result=1
+    fi        
+
+    if [[ $logical_path_check_fail == 1 ]];then
+        error_print_report "The VFs logical path check fail"
+        result=1
+    fi
+    
+    if [[ $io_state_check_fail == 1 ]];then
+        error_print_report "The VFs io state check fail"
+        result=1
+    fi
+    return $result
 }

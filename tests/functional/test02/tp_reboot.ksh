@@ -39,11 +39,30 @@
 #
 ################################################################################
 
-tp1()
+tp_reboot()
 {
-	cti_report "FC-IOR functional test02 TP1: reboot"
+	info_print_report "FC-IOR functional test02 TP1: reboot"
+
 	# Get the vars
 	nprd=$NPRD_A
+    nprd_password=$NPRD_A_PASSWORD
 	iod=$iod
-	password=$SOURCE_DOMAIN_PASSWORD
+    iod_ip=$IOD_IP
+
+    nprd_port=$(get_domain_port $nprd)
+
+    operation="reboot"
+    timeout=300
+
+    reboot_domain.exp $nprd_port $nprd_password > /dev/null &
+    sleep 10
+
+    check_ior $iod $TST_VFS $VFS_INFO_LOG $operation $timeout
+    if [[ $? == 0 ]];then
+        cti_pass "FC-IOR functional test02 TP1: Pass"
+    elif [[ $? == 1 ]];then
+        cti_fail "FC_IOR functional test02 TP1: Fail"
+    else
+        cti_unresolved "FC-IOR functional test02 TP1: Unresolved"
+    fi            
 }

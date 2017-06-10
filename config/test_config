@@ -24,12 +24,6 @@
 #--------------------------------------------------------------------------
 #
 
-#
-# Temporary logfile path used in the test case, 
-# test user should not modify.
-#
-LOGFILE_PATH=/var/tmp/fcior
-
 # 
 # Vdbench PATH, has default value, could custom by test user.
 # It should be identical with the vdbench files test user decompressd.
